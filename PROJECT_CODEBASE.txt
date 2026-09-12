@@ -1,0 +1,557 @@
+================================================================================
+PDFQuery - Modern, Production-Grade RAG Architecture Reference (app/ Package Structure)
+================================================================================
+This codebase uses modern LangChain (v0.2+) best practices, LCEL (LangChain
+Expression Language), Chroma vector storage, and Streamlit.
+Structured using the unified `app/` root package layout.
+
+Directory Tree:
+PDFQuery/
+├── pyproject.toml
+├── requirements.txt
+├── .env.example
+├── .env
+├── main.py (or app.py)                  <-- Root launcher
+└── app/                                 <-- Main Python package
+    ├── __init__.py
+    ├── config.py                        <-- Centralized settings
+    ├── pdf_processor/
+    │   ├── __init__.py
+    │   └── loader.py
+    ├── embedding_engine/
+    │   ├── __init__.py
+    │   └── embedder.py
+    ├── vector_store/
+    │   ├── __init__.py
+    │   └── store.py
+    ├── qa_generator/
+    │   ├── __init__.py
+    │   └── rag_chain.py
+    └── ui/
+        ├── __init__.py
+        └── app.py
+
+Table of Contents:
+1. requirements.txt
+2. .env.example
+3. pyproject.toml
+4. app/config.py
+5. app/pdf_processor/loader.py
+6. app/embedding_engine/embedder.py
+7. app/vector_store/store.py
+8. app/qa_generator/rag_chain.py
+9. app/ui/app.py
+10. app.py (Root Launcher)
+================================================================================
+
+
+================================================================================
+1. FILE: requirements.txt
+================================================================================
+streamlit>=1.32.0
+langchain>=0.2.0
+langchain-community>=0.2.0
+langchain-core>=0.2.0
+langchain-openai>=0.1.0
+pypdf>=4.1.0
+fonttools>=4.40.0
+chromadb>=0.5.0
+langchain-chroma>=0.1.0
+tiktoken>=0.7.0
+openai>=1.20.0
+pydantic>=2.6.0
+pydantic-settings>=2.2.0
+python-dotenv>=1.0.1
+
+
+================================================================================
+2. FILE: .env.example
+================================================================================
+# API Credentials (AICredits or standard OpenAI)
+AICREDITS_API_KEY=your_api_key_here
+AICREDITS_BASE_URL=https://aicredits.in/v1
+
+# Models
+EMBEDDING_MODEL=openai/text-embedding-3-small
+LLM_MODEL=openai/gpt-4o-mini
+
+# Chunking Parameters
+CHUNK_SIZE=1000
+CHUNK_OVERLAP=200
+
+# Storage Directories
+VECTOR_STORE_DIR=data/vector_store
+UPLOADS_DIR=data/uploads
+
+
+================================================================================
+3. FILE: pyproject.toml
+================================================================================
+[project]
+name = "pdfquery"
+version = "0.1.0"
+description = "Production-grade PDF Q&A RAG application"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.ty.environment]
+extra-paths = ["."]
+
+[tool.pyright]
+extraPaths = ["."]
+
+
+================================================================================
+4. FILE: app/config.py
+================================================================================
+from pathlib import Path
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """
+    Centralized configuration using Pydantic Settings.
+    Automatically loads from .env file and environment variables.
+    """
+
+    # Directory Paths (resolves relative to project root)
+    BASE_DIR: Path = Path(__file__).resolve().parent.parent
+    DATA_DIR: Path = BASE_DIR / "data"
+    UPLOADS_DIR: Path = DATA_DIR / "uploads"
+    VECTOR_STORE_DIR: Path = DATA_DIR / "vector_store"
+
+    # API Credentials
+    AICREDITS_API_KEY: str = Field(default="", description="API key for LLM and Embeddings")
+    AICREDITS_BASE_URL: str = Field(
+        default="https://aicredits.in/v1",
+        description="Base URL for OpenAI-compatible endpoint"
+    )
+
+    # Model Configuration
+    EMBEDDING_MODEL: str = Field(
+        default="openai/text-embedding-3-small",
+        description="Embedding model"
+    )
+    LLM_MODEL: str = Field(
+        default="openai/gpt-4o-mini",
+        description="Chat model for answer generation"
+    )
+    LLM_TEMPERATURE: float = Field(default=0.1, ge=0.0, le=1.0)
+
+    # Document Chunking Settings
+    CHUNK_SIZE: int = Field(default=1000, description="Chunk size in characters")
+    CHUNK_OVERLAP: int = Field(default=200, description="Chunk overlap in characters")
+
+    # Retrieval Settings
+    TOP_K_RESULTS: int = Field(default=4, description="Number of context chunks to retrieve")
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore"
+    )
+
+    def init_directories(self) -> None:
+        """Ensure necessary data folders exist."""
+        self.UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+        self.VECTOR_STORE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# Global singleton instance
+settings = Settings()
+settings.init_directories()
+
+
+================================================================================
+5. FILE: app/pdf_processor/loader.py
+================================================================================
+from pathlib import Path
+from typing import List, Union
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_core.documents import Document
+
+
+class PDFLoader:
+    """
+    Loads PDF files and extracts content into LangChain Document objects.
+    Preserves page numbers and metadata automatically in doc.metadata.
+    """
+
+    def __init__(self, file_path: Union[str, Path]):
+        self.file_path = Path(file_path)
+        if not self.file_path.exists():
+            raise FileNotFoundError(f"PDF file not found: {self.file_path}")
+        if self.file_path.suffix.lower() != ".pdf":
+            raise ValueError(f"Expected a PDF file, got: {self.file_path.suffix}")
+
+    def load(self) -> List[Document]:
+        """
+        Loads the PDF and returns a list of LangChain Document objects,
+        where each Document represents a single page with its metadata.
+        """
+        loader = PyPDFLoader(file_path=str(self.file_path))
+        documents = loader.load()
+
+        # Clean empty pages
+        cleaned_docs = [
+            doc for doc in documents
+            if doc.page_content and doc.page_content.strip()
+        ]
+
+        if not cleaned_docs:
+            raise ValueError(f"No extractable text found in PDF: {self.file_path.name}")
+
+        return cleaned_docs
+
+
+================================================================================
+6. FILE: app/embedding_engine/embedder.py
+================================================================================
+from typing import List
+from langchain_core.documents import Document
+from langchain_openai import OpenAIEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+from app.config import settings
+
+
+class Embedder:
+    """
+    Handles:
+    1. Document chunking with RecursiveCharacterTextSplitter
+    2. OpenAI-compatible Embeddings client
+    """
+
+    def __init__(self):
+        # Industry standard: Recursive splitter respects paragraphs and sentence boundaries
+        self.splitter = RecursiveCharacterTextSplitter(
+            chunk_size=settings.CHUNK_SIZE,
+            chunk_overlap=settings.CHUNK_OVERLAP,
+            separators=["\n\n", "\n", ". ", " ", ""]
+        )
+
+        # Reusable Embeddings Client (works with OpenAI, AICredits, Ollama, etc.)
+        self.embeddings = OpenAIEmbeddings(
+            model=settings.EMBEDDING_MODEL,
+            api_key=settings.AICREDITS_API_KEY,
+            base_url=settings.AICREDITS_BASE_URL
+        )
+
+    def split_documents(self, documents: List[Document]) -> List[Document]:
+        """
+        Splits a list of Documents into chunks while keeping original metadata
+        (such as page number and file source).
+        """
+        return self.splitter.split_documents(documents)
+
+    def get_embedding_function(self) -> OpenAIEmbeddings:
+        """Returns the embedding instance for vector store operations."""
+        return self.embeddings
+
+
+================================================================================
+7. FILE: app/vector_store/store.py
+================================================================================
+from typing import List, Optional
+from langchain_chroma import Chroma
+from langchain_core.documents import Document
+from langchain_core.vectorstores import VectorStoreRetriever
+
+from app.config import settings
+from app.embedding_engine.embedder import Embedder
+
+
+class VectorStoreService:
+    """
+    Manages persistent Chroma vector store creation, updates, and retriever creation.
+    Uses Chroma.from_documents() for optimal batching and simplicity.
+    """
+
+    COLLECTION_NAME = "pdf_query_collection"
+
+    def __init__(self, embedder: Optional[Embedder] = None):
+        self.embedder = embedder or Embedder()
+        self.persist_directory = str(settings.VECTOR_STORE_DIR)
+
+    def build_from_documents(self, documents: List[Document]) -> Chroma:
+        """
+        Creates and persists a Chroma vector store directly from document chunks.
+        This single line automatically handles embedding generation and disk persistence.
+        """
+        vectorstore = Chroma.from_documents(
+            documents=documents,
+            embedding=self.embedder.get_embedding_function(),
+            persist_directory=self.persist_directory,
+            collection_name=self.COLLECTION_NAME
+        )
+        return vectorstore
+
+    def load_vector_store(self) -> Chroma:
+        """Loads an existing Chroma vector store from disk."""
+        return Chroma(
+            persist_directory=self.persist_directory,
+            embedding_function=self.embedder.get_embedding_function(),
+            collection_name=self.COLLECTION_NAME
+        )
+
+    def get_retriever(self, top_k: int = settings.TOP_K_RESULTS) -> VectorStoreRetriever:
+        """
+        Returns a LangChain retriever ready to plug into any RAG chain.
+        Supports search_type='similarity' or 'mmr' (Maximal Marginal Relevance).
+        """
+        vectorstore = self.load_vector_store()
+        return vectorstore.as_retriever(
+            search_type="similarity",
+            search_kwargs={"k": top_k}
+        )
+
+    def reset(self) -> None:
+        """Deletes current collection to prepare for a new document upload."""
+        try:
+            vectorstore = self.load_vector_store()
+            vectorstore.delete_collection()
+        except Exception:
+            pass
+
+
+================================================================================
+8. FILE: app/qa_generator/rag_chain.py
+================================================================================
+from typing import Dict, Any, List
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.vectorstores import VectorStoreRetriever
+
+try:
+    from langchain.chains.combine_documents import create_stuff_documents_chain
+    from langchain.chains import create_retrieval_chain
+except ImportError:
+    from langchain_classic.chains.combine_documents import create_stuff_documents_chain
+    from langchain_classic.chains import create_retrieval_chain
+
+from app.config import settings
+
+
+class RAGPipeline:
+    """
+    Modern LangChain RAG pipeline using pre-built chains:
+    - create_stuff_documents_chain: Handles document stuffing into prompt internally (no format_docs needed).
+    - create_retrieval_chain: Coordinates retrieval and question answering, returning both
+      the synthesized 'answer' and retrieved 'context' documents.
+    """
+
+    def __init__(self, retriever: VectorStoreRetriever):
+        self.retriever = retriever
+
+        # 1. LLM Client
+        self.llm = ChatOpenAI(
+            model=settings.LLM_MODEL,
+            temperature=settings.LLM_TEMPERATURE,
+            api_key=settings.AICREDITS_API_KEY,
+            base_url=settings.AICREDITS_BASE_URL
+        )
+
+        # 2. QA Prompt Template
+        # Note: create_stuff_documents_chain expects {context} and {input}
+        self.prompt = ChatPromptTemplate.from_messages([
+            (
+                "system",
+                "You are an expert Q&A assistant analyzing a PDF document.\n"
+                "Answer the user's question accurately, concisely, and factually using ONLY the provided context.\n"
+                "When possible, reference the page number or source.\n"
+                "If the context does not contain enough information, reply: "
+                "'I cannot find the answer in the provided document.' Do not hallucinate.\n\n"
+                "Context:\n{context}"
+            ),
+            (
+                "human",
+                "{input}"
+            )
+        ])
+
+        # 3. Pre-built Chains (no format_docs required)
+        self.question_answer_chain = create_stuff_documents_chain(self.llm, self.prompt)
+        self.rag_chain = create_retrieval_chain(self.retriever, self.question_answer_chain)
+
+    def query(self, question: str) -> Dict[str, Any]:
+        """
+        Executes query.
+        Returns:
+            {
+                "answer": "Synthesized text...",
+                "sources": [Document, Document, ...]
+            }
+        """
+        response = self.rag_chain.invoke({"input": question})
+        return {
+            "answer": response["answer"],
+            "sources": response["context"]
+        }
+
+
+================================================================================
+9. FILE: app/ui/app.py
+================================================================================
+from pathlib import Path
+import streamlit as st
+
+from app.config import settings
+from app.pdf_processor.loader import PDFLoader
+from app.embedding_engine.embedder import Embedder
+from app.vector_store.store import VectorStoreService
+from app.qa_generator.rag_chain import RAGPipeline
+
+
+class PDFQueryApp:
+    """Streamlit frontend orchestrator for the PDFQuery RAG tool."""
+
+    def __init__(self):
+        self.embedder = Embedder()
+        self.vector_service = VectorStoreService(embedder=self.embedder)
+
+    def process_pdf(self, uploaded_file) -> None:
+        """Handles PDF ingestion: Load -> Split -> Embed & Persist into Chroma."""
+        temp_file_path = settings.UPLOADS_DIR / uploaded_file.name
+
+        with st.spinner("Step 1/3: Saving uploaded PDF..."):
+            with open(temp_file_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+
+        try:
+            with st.spinner("Step 2/3: Extracting text from PDF pages..."):
+                loader = PDFLoader(temp_file_path)
+                documents = loader.load()
+
+            with st.spinner("Step 3/3: Chunking text and creating vector embeddings..."):
+                chunks = self.embedder.split_documents(documents)
+                # Reset old index and build new Chroma store
+                self.vector_service.reset()
+                self.vector_service.build_from_documents(chunks)
+
+            # Update session state
+            st.session_state["pdf_loaded"] = True
+            st.session_state["pdf_name"] = uploaded_file.name
+            st.session_state["total_pages"] = len(documents)
+            st.session_state["total_chunks"] = len(chunks)
+            st.session_state["chat_history"] = []
+
+            st.sidebar.success(
+                f"✅ Ready! Indexed {len(chunks)} chunks from {len(documents)} pages."
+            )
+
+        except Exception as e:
+            st.sidebar.error(f"Failed to process PDF: {str(e)}")
+
+    def run(self) -> None:
+        """Renders the Streamlit application layout and chat loop."""
+        st.set_page_config(
+            page_title="PDFQuery - RAG Q&A",
+            page_icon="📄",
+            layout="wide"
+        )
+
+        st.title("📄 PDFQuery - PDF Q&A Tool")
+        st.caption("Ask questions directly from your PDF using modern LangChain RAG & Chroma")
+
+        # Session state initialization
+        if "chat_history" not in st.session_state:
+            st.session_state["chat_history"] = []
+        if "pdf_loaded" not in st.session_state:
+            st.session_state["pdf_loaded"] = False
+
+        # Sidebar: File Upload & Status
+        with st.sidebar:
+            st.header("Upload Document")
+            uploaded_file = st.file_uploader("Upload a PDF file", type=["pdf"])
+
+            if uploaded_file and st.button("Process Document", type="primary"):
+                self.process_pdf(uploaded_file)
+
+            if st.session_state["pdf_loaded"]:
+                st.divider()
+                st.subheader("Document Stats")
+                st.write(f"📁 **File:** `{st.session_state.get('pdf_name')}`")
+                st.write(f"📃 **Pages:** {st.session_state.get('total_pages')}")
+                st.write(f"🧩 **Chunks:** {st.session_state.get('total_chunks')}")
+
+        # Main Chat Area
+        if not st.session_state["pdf_loaded"]:
+            st.info("👈 Upload and process a PDF from the sidebar to start asking questions.")
+            return
+
+        # Display conversation history
+        for message in st.session_state["chat_history"]:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+                if message.get("sources"):
+                    with st.expander("📚 View Cited Sources"):
+                        for idx, doc in enumerate(message["sources"], start=1):
+                            page_num = doc.get("page", "Unknown")
+                            st.markdown(f"**Source {idx} (Page {page_num}):**")
+                            st.caption(doc.get("text", ""))
+
+        # Chat Input
+        if user_query := st.chat_input("Ask a question about your PDF..."):
+            # Display user question immediately
+            st.session_state["chat_history"].append({"role": "user", "content": user_query})
+            with st.chat_message("user"):
+                st.markdown(user_query)
+
+            # Generate RAG response
+            with st.chat_message("assistant"):
+                with st.spinner("Searching document & synthesizing answer..."):
+                    try:
+                        retriever = self.vector_service.get_retriever()
+                        pipeline = RAGPipeline(retriever=retriever)
+                        result = pipeline.query(user_query)
+
+                        answer = result["answer"]
+                        sources = result["sources"]
+
+                        st.markdown(answer)
+
+                        # Render source cards with exact page numbers
+                        serialized_sources = []
+                        if sources:
+                            with st.expander("📚 View Cited Sources"):
+                                for idx, doc in enumerate(sources, start=1):
+                                    page = doc.metadata.get("page", 0) + 1
+                                    text_preview = doc.page_content
+                                    st.markdown(f"**Source {idx} (Page {page}):**")
+                                    st.caption(text_preview)
+                                    serialized_sources.append({
+                                        "page": page,
+                                        "text": text_preview
+                                    })
+
+                        # Save assistant response to history
+                        st.session_state["chat_history"].append({
+                            "role": "assistant",
+                            "content": answer,
+                            "sources": serialized_sources
+                        })
+
+                    except Exception as e:
+                        st.error(f"Error answering question: {str(e)}")
+
+
+================================================================================
+10. FILE: app.py (Root Launcher)
+================================================================================
+"""
+Main launcher script for PDFQuery application.
+To run:
+    streamlit run app.py
+"""
+from app.ui.app import PDFQueryApp
+
+if __name__ == "__main__":
+    app = PDFQueryApp()
+    app.run()
+
+================================================================================
+END OF CODEBASE REFERENCE
+================================================================================
