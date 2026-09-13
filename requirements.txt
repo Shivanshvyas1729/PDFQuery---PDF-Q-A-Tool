@@ -30,4 +30,3 @@ python-dotenv
 # Testing
 pytest
 
--e .
