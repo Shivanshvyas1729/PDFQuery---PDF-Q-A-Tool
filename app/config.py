@@ -24,11 +24,11 @@ class Settings(BaseSettings):
 
     # Model Configuration
     EMBEDDING_MODEL: str = Field(
-        default="openai/text-embedding-3-small",
+        default="text-embedding-3-small",
         description="Embedding model"
     )
     LLM_MODEL: str = Field(
-        default="openai/gpt-4o-mini",
+        default="gpt-4o-mini",
         description="Chat model for answer generation"
     )
     LLM_TEMPERATURE: float = Field(default=0.1, ge=0.0, le=1.0)

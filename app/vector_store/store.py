@@ -5,10 +5,7 @@ from typing import Optional ,List
 from langchain_chroma import Chroma
 from langchain_core.vectorstores import VectorStoreRetriever
 
-
-
-
-class VecotrStoreService:
+class VectorStoreService:
     """
     Manages persistent Chroma vector store creation, updates, and retriever creation.
     Uses Chroma.from_documents() for optimal batching and simplicity.

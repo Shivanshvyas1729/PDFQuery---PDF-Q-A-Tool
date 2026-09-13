@@ -1,26 +1,33 @@
 # Web Interface
-streamlit>=1.32.0
+streamlit
 
 # LangChain Core & Integrations
-langchain>=0.2.0
-langchain-community>=0.2.0
-langchain-core>=0.2.0
-langchain-openai>=0.1.0
+langchain
+langchain-community
+langchain-core
+langchain-openai
+langchain-classic
 
 
 # Embeddings & Vector Storage
-chromadb>=0.5.0
-langchain-chroma>=0.1.0
+chromadb
+langchain-chroma
+torchvision
 
-tiktoken>=0.7.0
+# PDF Processing
+pypdf
+
+tiktoken
 
 # LLM Providers
-openai>=1.20.0
+openai
 
 # Configuration & Data Validation (Pydantic)
 pydantic
 pydantic-settings
-python-dotenv>=1.0.1
+python-dotenv
 
 # Testing
-pytest>=8.0.0
+pytest
+
+-e .
