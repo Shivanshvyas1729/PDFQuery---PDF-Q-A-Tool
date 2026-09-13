@@ -1,5 +1,8 @@
 # 📄 PDFQuery - PDF Q&A Tool
 
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://pdfquerytools.streamlit.app/)
+🔗 **Live Demo:** [https://pdfquerytools.streamlit.app/](https://pdfquerytools.streamlit.app/)
+
 A modern, production-grade Retrieval-Augmented Generation (RAG) tool built with **LangChain**, **ChromaDB**, and **Streamlit**. Upload any PDF document and ask contextual questions to receive answers grounded strictly in the document content, complete with source citations and page numbers.
 
 ---
