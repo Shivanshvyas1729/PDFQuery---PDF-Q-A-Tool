@@ -1,8 +1,0 @@
-{
-  "venvPath": ".",
-  "venv": ".venv",
-  "extraPaths": ["."],
-  "pythonVersion": "3.12",
-  "reportMissingImports": true,
-  "reportAttributeAccessIssue": true
-}
