@@ -4,7 +4,24 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "streamlit",
+    "langchain",
+    "langchain-community",
+    "langchain-core",
+    "langchain-openai",
+    "langchain-classic",
+    "chromadb",
+    "langchain-chroma",
+    "torchvision",
+    "pypdf",
+    "tiktoken",
+    "openai",
+    "pydantic",
+    "pydantic-settings",
+    "python-dotenv",
+    "pytest"
+]
 
 [build-system]
 requires = ["setuptools>=61.0"]
